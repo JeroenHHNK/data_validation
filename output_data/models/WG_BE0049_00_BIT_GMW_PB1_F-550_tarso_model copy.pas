@@ -101,8 +101,8 @@
         "obj_func": 0.6358215904653075
     },
     "file_info": {
-        "date_created": "2025-11-19T11:34:50.954064",
-        "date_modified": "2025-11-19T11:34:52.375151",
+        "date_created": "2025-11-19T15:53:05.520855",
+        "date_modified": "2025-11-19T15:53:07.238318",
         "pastas_version": "1.11.0",
         "owner": "jvanruitenbeek"
     }

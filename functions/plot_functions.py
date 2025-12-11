@@ -65,127 +65,102 @@ def plot_head_distribution(dataframe, title="Head Distribution: Histogram + Box 
     return fig
 
 
-def plot_flagged_head_timeseries(dataframe, title="Head Time Series with Flags"):
+import plotly.graph_objects as go
+import pandas as pd
+
+def plot_groundwater_with_flags(df, 
+                                evap_col=None, 
+                                prec_col=None):
     """
-    Plot the head time series and highlight:
-    - Outliers based on boxplot IQR method
-    - Significant drops (>0.05 m) and jumps (>0.3 m) from head_t1
-    Also includes precipitation, evapotranspiration, and recharge on the primary y-axis.
+    Hydrology-standard groundwater plot:
+        - Head (cleaned) + head_raw + daily mean + daily last
+        - Flags (v1-v4)
+        - Precipitation: downward filled area, blue
+        - Evapotranspiration: upward filled area, orange
+
+    Returns: Plotly Figure
     """
-    # Clip to first and last valid head entry
-    first_valid = dataframe["head"].first_valid_index()
-    last_valid = dataframe["head"].last_valid_index()
-    if first_valid is not None and last_valid is not None:
-        dataframe = dataframe.loc[first_valid:last_valid]
-    else:
-        raise ValueError("No valid head data to plot.")
 
-    # Drop NaNs for head and head_t1
-    head_series = dataframe["head"].dropna()
-    head_t1_series = dataframe["head_t1"].dropna()
+    df_plot = df.copy()
+    df_plot["Time"] = pd.to_datetime(df_plot["Time"])
 
-    # --- Detect outliers using IQR method ---
-    Q1 = head_series.quantile(0.25)
-    Q3 = head_series.quantile(0.75)
-    IQR = Q3 - Q1
-    lower_bound = Q1 - 1.5 * IQR
-    upper_bound = Q3 + 1.5 * IQR
-    outlier_mask = (head_series < lower_bound) | (head_series > upper_bound)
+    fig = go.Figure()
 
-    # --- Detect significant jumps/drops ---
-    jump_mask = head_t1_series > 0.3
-    drop_mask = head_t1_series < -0.05
+    # -------------------------------------------
+    # MAIN HEAD TIMESERIES
+    # -------------------------------------------
+    fig.add_trace(go.Scatter(
+        x=df_plot["Time"], y=df_plot["head"],
+        mode="lines", name="Head (cleaned)",
+        line=dict(color="black", width=2)
+    ))
 
-    # --- Create subplot with secondary y-axis ---
-    fig = make_subplots(specs=[[{"secondary_y": True}]])
+    if "head_raw" in df_plot.columns:
+        fig.add_trace(go.Scatter(
+            x=df_plot["Time"], y=df_plot["head_raw"],
+            mode="lines", name="Head (original)",
+            line=dict(color="gray", width=1)
+        ))
 
-    # 1) Add bars for precipitation, evapotranspiration, and recharge (primary y)
-    if "Precipitation" in dataframe.columns:
-        fig.add_bar(
+    # -------------------------------------------
+    # FLAG MARKERS (v1–v4)
+    # -------------------------------------------
+    flag_colors = {"v1": "red", "v2": "darkred", "v3": "tomato", "v4": "firebrick"}
+
+    for col, color in flag_colors.items():
+        if col in df_plot.columns:
+            mask = df_plot[col].notna()
+            fig.add_trace(go.Scatter(
+                x=df_plot.loc[mask, "Time"],
+                y=df_plot.loc[mask, col],  # ✔ fixed
+                mode="markers",
+                name=f"{col} flag",
+                marker=dict(color=color, size=9, symbol="circle-open"),
+                yaxis="y1"
+            ))
+    # -------------------------------------------
+    # HYDROLOGY STANDARD: EVAP & PRECIP
+    # -------------------------------------------
+    # Precip: downward shaded area
+    if prec_col and prec_col in df_plot.columns:
+        fig.add_trace(go.Scatter(
+            x=df_plot["Time"],
+            y=-df_plot[prec_col],  # downward
             name="Precipitation",
-            x=dataframe.index,
-            y=dataframe["Precipitation"],
-            opacity=0.6,
-            marker_line_width=0,
-        )
+            fill="tozeroy",
+            line=dict(color="steelblue", width=0),
+            fillcolor="rgba(0, 100, 200, 0.5)",
+            yaxis="y2"
+        ))
 
-    if "Evapotranspiration" in dataframe.columns:
-        fig.add_bar(
+    # Evap: upward shaded area
+    if evap_col and evap_col in df_plot.columns:
+        fig.add_trace(go.Scatter(
+            x=df_plot["Time"],
+            y=df_plot[evap_col],
             name="Evapotranspiration",
-            x=dataframe.index,
-            y=dataframe["Evapotranspiration"],
-            opacity=0.6,
-            marker_line_width=0,
-        )
+            fill="tozeroy",
+            line=dict(color="darkorange", width=0),
+            fillcolor="rgba(255, 140, 0, 0.5)",
+            yaxis="y2"
+        ))
 
-    if "recharge" in dataframe.columns:
-        fig.add_bar(
-            name="Recharge",
-            x=dataframe.index,
-            y=dataframe["recharge"],
-            opacity=0.6,
-            marker_line_width=0,
-            marker=dict(color="purple"),
-        )
-
-    # 2) Main head time series (secondary y)
-    fig.add_trace(go.Scatter(
-        x=dataframe.index,
-        y=dataframe["head"],
-        mode="lines",
-        name="Head",
-        line=dict(color="black", width=1.5)
-    ), secondary_y=True)
-
-    # 3) Outliers on head (secondary y)
-    fig.add_trace(go.Scatter(
-        x=head_series[outlier_mask].index,
-        y=head_series[outlier_mask],
-        mode="markers",
-        name="Boxplot Outlier",
-        marker=dict(color="red", size=8, symbol="circle-open"),
-        hoverinfo="x+y"
-    ), secondary_y=True)
-
-    # 4) Jumps > 0.3m (secondary y)
-    fig.add_trace(go.Scatter(
-        x=head_t1_series[jump_mask].index,
-        y=dataframe.loc[head_t1_series[jump_mask].index, "head"],
-        mode="markers",
-        name="Jump > 0.3m",
-        marker=dict(color="blue", size=8, symbol="triangle-up")
-    ), secondary_y=True)
-
-    # 5) Drops > 0.05m (secondary y)
-    fig.add_trace(go.Scatter(
-        x=head_t1_series[drop_mask].index,
-        y=dataframe.loc[head_t1_series[drop_mask].index, "head"],
-        mode="markers",
-        name="Drop > 0.05m",
-        marker=dict(color="orange", size=8, symbol="triangle-down")
-    ), secondary_y=True)
-
-    # --- Layout ---
+    # -------------------------------------------
+    # LAYOUT
+    # -------------------------------------------
     fig.update_layout(
-        title=title,
+        title="Groundwater Head + Hydro-Climatic Inputs",
+        xaxis_title="Time",
+        yaxis=dict(title="Head [m]", side="left"),
+        yaxis2=dict(
+            title="Evap (+) / Precip (–) [mm]",
+            overlaying="y",
+            side="right",
+            showgrid=False
+        ),
         template="plotly_white",
         hovermode="x unified",
-        barmode="overlay",
-        height=600,
-        legend=dict(orientation="h", y=1.05, x=1, xanchor="right"),
-        margin=dict(t=80, r=20, b=40, l=60),
-    )
-
-    # --- Y-axis labels ---
-    fig.update_yaxes(
-        title_text="Precip / Evapo / Recharge (mm)",
-        secondary_y=False,
-        rangemode="tozero"
-    )
-
-    fig.update_yaxes(
-        title_text="Head (m)",
-        secondary_y=True
+        legend=dict(orientation="h", y=1.05)
     )
 
     return fig
