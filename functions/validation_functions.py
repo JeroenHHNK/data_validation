@@ -244,6 +244,13 @@ def flag_constant_head_periods(
     hmin_input=None,
     vcol="v3",      # NEW: optional input
 ):
+    """
+    v3 bottom-band filter.
+
+    Current behavior flags any non-NaN head value that falls inside the
+    interval [hmin, hmin + band_upper_m]. This keeps backward-compatible
+    parameters, but no longer uses sliding-window flatness checks.
+    """
 
     df = df_in.copy()
 
@@ -251,78 +258,28 @@ def flag_constant_head_periods(
     if vcol not in df.columns:
         df[vcol] = np.nan
 
-    heads = df["head"].values
-    n = len(df)
+    valid_head = df["head"].dropna()
+    if valid_head.empty:
+        return df, False
 
-    # ---------------------------------------------------------
-    # 1. Determine hmin
-    # ---------------------------------------------------------
+    # Determine hmin (explicit input preferred)
     if hmin_input is not None:
-        # Use user-supplied hmin
         hmin = float(hmin_input)
     else:
-        # Fallback: use minimum observed head
-        hmin = np.nanmin(heads)
+        hmin = float(valid_head.min())
 
-    # Compute threshold detection level
-    threshold_detection_value = hmin + band_upper_m
+    threshold_detection_value = hmin + float(band_upper_m)
 
     print(f"hmin used = {hmin}")
     print(f"Threshold detection value = {threshold_detection_value}")
 
-    # Mask of points eligible for sliding-window check
-    below_mask = heads <= threshold_detection_value
+    # Flag values in the configured bottom band
+    mask_flagged = (
+        df["head"].notna()
+        & (df["head"] >= hmin)
+        & (df["head"] <= threshold_detection_value)
+    )
 
-    # Final mask of flagged points
-    mask_flagged = np.zeros(n, dtype=bool)
-
-    # ---------------------------------------------------------
-    # 2. Locate contiguous segments below threshold
-    # ---------------------------------------------------------
-    idx = np.where(below_mask)[0]
-
-    if len(idx) == 0:
-        return df, False  # no candidates at all
-
-    segment_breaks = np.where(np.diff(idx) > 1)[0] + 1
-    segments = np.split(idx, segment_breaks)
-
-    # ---------------------------------------------------------
-    # 3. Sliding window evaluation inside each segment
-    # ---------------------------------------------------------
-    for seg in segments:
-        if len(seg) < tconst_steps:
-            continue
-
-        for i in range(len(seg) - tconst_steps + 1):
-            window_idx = seg[i : i + tconst_steps]
-            window_vals = heads[window_idx]
-
-            if np.isnan(window_vals).any():
-                continue
-
-            first = window_vals[0]
-            last  = window_vals[-1]
-            w_min = np.min(window_vals)
-            w_max = np.max(window_vals)
-
-            # Condition B — first vs last difference
-            if abs(first - last) > flat_margin_m:
-                continue
-
-            # Condition C — internal variation
-            if (w_max - first > flat_margin_m) or \
-               (first - w_min > flat_margin_m) or \
-               (w_max - last  > flat_margin_m) or \
-               (last  - w_min > flat_margin_m):
-                continue
-
-            # Window is a flatliner → flag it
-            mask_flagged[window_idx] = True
-
-    # ---------------------------------------------------------
-    # 4. Apply flags
-    # ---------------------------------------------------------
     df.loc[mask_flagged & df[vcol].isna(), vcol] = df.loc[mask_flagged, "head"]
     df.loc[mask_flagged, "head"] = np.nan
 

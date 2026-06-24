@@ -73,7 +73,7 @@ def plot_groundwater_with_flags(df,
                                 prec_col=None):
     """
     Hydrology-standard groundwater plot:
-        - Head (cleaned) + head_raw + daily mean + daily last
+    - Head (cleaned) + head_raw + daily/3-day/7-day means
         - Flags (v1-v4)
         - Precipitation: downward filled area, blue
         - Evapotranspiration: upward filled area, orange
@@ -101,6 +101,56 @@ def plot_groundwater_with_flags(df,
             mode="lines", name="Head (original)",
             line=dict(color="gray", width=1)
         ))
+
+    # Trend lines are based on raw head values when available.
+    trend_source_col = "head_raw" if "head_raw" in df_plot.columns else "head"
+    trend_label_suffix = ", raw" if trend_source_col == "head_raw" else ""
+    head_series = df_plot.set_index("Time")[trend_source_col].sort_index()
+    avg_1d = head_series.resample("D").mean()
+    avg_3d = head_series.resample("3D").mean()
+    avg_7d = head_series.resample("7D").mean()
+    rolling_3d = head_series.rolling(window="3D", min_periods=1).mean()
+    rolling_7d = head_series.rolling(window="7D", min_periods=1).mean()
+
+    fig.add_trace(go.Scatter(
+        x=avg_1d.index,
+        y=avg_1d.values,
+        mode="lines",
+        name=f"Head (daily mean{trend_label_suffix})",
+        line=dict(color="darkcyan", width=2, dash="solid")
+    ))
+
+    fig.add_trace(go.Scatter(
+        x=avg_3d.index,
+        y=avg_3d.values,
+        mode="lines",
+        name=f"Head (3-day avg{trend_label_suffix})",
+        line=dict(color="teal", width=2, dash="dashdot")
+    ))
+
+    fig.add_trace(go.Scatter(
+        x=avg_7d.index,
+        y=avg_7d.values,
+        mode="lines",
+        name=f"Head (7-day avg{trend_label_suffix})",
+        line=dict(color="navy", width=2, dash="longdashdot")
+    ))
+
+    fig.add_trace(go.Scatter(
+        x=rolling_3d.index,
+        y=rolling_3d.values,
+        mode="lines",
+        name=f"Head (3-day rolling mean{trend_label_suffix})",
+        line=dict(color="seagreen", width=2, dash="dash")
+    ))
+
+    fig.add_trace(go.Scatter(
+        x=rolling_7d.index,
+        y=rolling_7d.values,
+        mode="lines",
+        name=f"Head (7-day rolling mean{trend_label_suffix})",
+        line=dict(color="royalblue", width=2, dash="dot")
+    ))
 
     # -------------------------------------------
     # FLAG MARKERS (v1–v4)
