@@ -1,0 +1,21 @@
+# Configuration for the Streamlit validation dashboard.
+# All keys are optional; the app falls back to these same defaults if the file
+# (or pyyaml) is missing.
+
+# Base directory holding the pipeline output (relative to repo root, or absolute).
+# Series are read from <base_data_dir>/{vendor}/<origin>/only_csv/*.csv and
+# validation is stored in <base_data_dir>/{vendor}/<origin>/dashboard/<series>.csv
+base_data_dir: output_data
+
+# Directory for manual validation stores (separate from output_data so it can
+# be version-controlled).  Same {vendor}/{origin}/{series}.csv structure.
+validation_store_dir: validation_data
+
+# Maximum length of a validation note.
+notes_max_len: 30
+
+# Frequency used to round raw timestamps into a stable merge key.
+round_freq: 1h
+
+# Directory containing stressor CSV files (KNMI precipitation/evaporation).
+stressor_dir: input_stressors

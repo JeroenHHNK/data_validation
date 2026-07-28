@@ -236,55 +236,62 @@ def flag_unrealistic_step_change(df_in, max_up=0.3, max_down=-0.05, vcol="v2"):
 
     return df_out, changed
 
-def flag_constant_head_periods(
+def flag_constant_head_runs(
     df_in,
-    tconst_steps,
-    flat_margin_m=0.02,
-    band_upper_m=0.10,
+    min_run_steps=96,
+    band_upper_m=0.15,
     hmin_input=None,
-    vcol="v3",      # NEW: optional input
+    vcol="v3",
 ):
     """
-    v3 bottom-band filter.
+    v3 flag: constant-head run detector.
 
-    Current behavior flags any non-NaN head value that falls inside the
-    interval [hmin, hmin + band_upper_m]. This keeps backward-compatible
-    parameters, but no longer uses sliding-window flatness checks.
+    Flags head values that stay within [hmin, hmin + band_upper_m] for
+    >= min_run_steps consecutive time steps.
     """
-
     df = df_in.copy()
 
-    # Ensure validation column exists
     if vcol not in df.columns:
         df[vcol] = np.nan
 
-    valid_head = df["head"].dropna()
-    if valid_head.empty:
+    valid = df["head"].dropna()
+    if valid.empty:
         return df, False
 
-    # Determine hmin (explicit input preferred)
-    if hmin_input is not None:
-        hmin = float(hmin_input)
-    else:
-        hmin = float(valid_head.min())
+    hmin = float(hmin_input) if hmin_input is not None else float(valid.min())
+    threshold = hmin + float(band_upper_m)
 
-    threshold_detection_value = hmin + float(band_upper_m)
+    in_band = df["head"].notna() & (df["head"] >= hmin) & (df["head"] <= threshold)
 
-    print(f"hmin used = {hmin}")
-    print(f"Threshold detection value = {threshold_detection_value}")
-
-    # Flag values in the configured bottom band
-    mask_flagged = (
-        df["head"].notna()
-        & (df["head"] >= hmin)
-        & (df["head"] <= threshold_detection_value)
-    )
+    group_id = (~in_band).cumsum()
+    run_lengths = in_band.groupby(group_id).transform("sum")
+    mask_flagged = in_band & (run_lengths >= min_run_steps)
 
     df.loc[mask_flagged & df[vcol].isna(), vcol] = df.loc[mask_flagged, "head"]
     df.loc[mask_flagged, "head"] = np.nan
 
-    changed = mask_flagged.any()
-    return df, changed
+    return df, mask_flagged.any()
+
+
+def flag_constant_head_periods(
+    df_in,
+    tconst_steps=96,
+    flat_margin_m=0.02,
+    band_upper_m=0.10,
+    hmin_input=None,
+    vcol="v3",
+):
+    """Deprecated: use flag_constant_head_runs instead."""
+    import warnings
+    warnings.warn(
+        "flag_constant_head_periods is deprecated; use flag_constant_head_runs",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return flag_constant_head_runs(
+        df_in, min_run_steps=tconst_steps,
+        band_upper_m=band_upper_m, hmin_input=hmin_input, vcol=vcol,
+    )
 
 
 def flag_statistical_outliers(df_in, vcol="v4"):
