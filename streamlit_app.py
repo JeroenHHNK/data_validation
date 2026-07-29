@@ -17,6 +17,7 @@ from dashboard import data_access, validation_store
 from dashboard.autoflags import load_flag_hints
 from dashboard.config import load_settings
 from dashboard.overview import collect_all_stats, compute_folder_summary
+from dashboard.generate_tab import render_generate_tab
 from dashboard.plotting import build_figure
 
 st.set_page_config(page_title="Groundwater Validation Dashboard", layout="wide")
@@ -371,10 +372,17 @@ def render_overview() -> None:
 
 render_sidebar()
 
-tab_overview, tab_validation = st.tabs(["Overview", "Validation"])
+tab_overview, tab_validation, tab_generate = st.tabs(["Overview", "Validation", "Generate Data"])
 
 with tab_overview:
     render_overview()
 
 with tab_validation:
     render_main()
+
+with tab_generate:
+    render_generate_tab(
+        input_dir=SETTINGS.repo_root / "input_data",
+        output_dir=SETTINGS.base_data_dir,
+        validation_dir=SETTINGS.validation_store_dir,
+    )
