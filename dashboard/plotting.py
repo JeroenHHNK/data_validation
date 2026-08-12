@@ -48,6 +48,18 @@ def build_figure(
         showlegend=False,
     ))
 
+    # Daily-mean resampled line (the signal that goes into the model).
+    ts = df.set_index("timestamp")["raw_data"]
+    daily = ts.resample("1D").mean().dropna()
+    if not daily.empty:
+        fig.add_trace(go.Scatter(
+            x=daily.index, y=daily.values,
+            mode="lines",
+            line=dict(color="rgba(140,140,140,0.6)", width=1.5, dash="dot"),
+            name="Daily mean",
+            hovertemplate="%{x|%Y-%m-%d}<br>%{y:.4f} m<extra></extra>",
+        ))
+
     status = status_series(df)
     groups = [
         ("unreviewed", STATUS_GRAY, "Unreviewed"),
