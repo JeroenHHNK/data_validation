@@ -119,8 +119,8 @@ raw data** — already-reviewed points are never overwritten.
 
 ```powershell
 # From the repository root, inside the virtual environment:
-poetry run streamlit run streamlit_app.py
---server.port 8502
+poetry run streamlit run streamlit_app.py --server.port 8502
+
 
 # Killing or checking a zombie server if it exists when the app crashes
 Get-CimInstance Win32_Process -Filter "Name='python.exe'" | Where-Object { $_.CommandLine -like "*streamlit*" } | Select-Object ProcessId, CommandLine
