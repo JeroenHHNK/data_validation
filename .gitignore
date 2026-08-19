@@ -6,3 +6,7 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+
+# Raw vendor deliveries and stressor sources: large, regenerated from source
+input_data/
+input_stressors/

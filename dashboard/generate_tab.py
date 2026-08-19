@@ -119,7 +119,7 @@ def _compute_diff_summary(
 def _run_generate(info: DatasetInfo, output_dir: Path) -> str:
     """Run the conversion for the selected dataset, writing into the matched folder."""
     vendor = info.vendor.lower()
-    target_origin = info.existing_origin or info.latest_raw.stem
+    target_origin = info.existing_origin or info.stable_key
 
     if vendor == "fugro":
         from dataval.convert_fugro import process_fugro_csv
@@ -131,9 +131,9 @@ def _run_generate(info: DatasetInfo, output_dir: Path) -> str:
             info.latest_raw,
             out_base,
         )
-        if info.existing_origin and info.latest_raw.stem != info.existing_origin:
+        if info.latest_raw.stem != target_origin:
             new_dir = out_base / info.latest_raw.stem / "only_csv"
-            old_dir = out_base / info.existing_origin / "only_csv"
+            old_dir = out_base / target_origin / "only_csv"
             if new_dir.is_dir() and new_dir != old_dir:
                 old_dir.mkdir(parents=True, exist_ok=True)
                 for csv_file in new_dir.glob("*.csv"):
@@ -149,26 +149,12 @@ def _run_generate(info: DatasetInfo, output_dir: Path) -> str:
     elif vendor == "wiertsema":
         from dataval.convert_wiertsema import process_workbook
         out_base = output_dir / vendor
-        target_dir = out_base / target_origin / "only_csv"
-        target_dir.mkdir(parents=True, exist_ok=True)
 
         for raw_file in info.raw_files:
-            process_workbook(raw_file, out_base)
-            if info.existing_origin and raw_file.stem != info.existing_origin:
-                new_dir = out_base / raw_file.stem / "only_csv"
-                old_dir = out_base / info.existing_origin / "only_csv"
-                if new_dir.is_dir() and new_dir != old_dir:
-                    old_dir.mkdir(parents=True, exist_ok=True)
-                    for csv_file in new_dir.glob("*.csv"):
-                        dest = old_dir / csv_file.name
-                        csv_file.replace(dest)
-                    try:
-                        (out_base / raw_file.stem / "only_csv").rmdir()
-                        (out_base / raw_file.stem).rmdir()
-                    except OSError:
-                        pass
+            process_workbook(raw_file, out_base, origin_name=target_origin)
 
-        return f"Generated series CSV(s) from {len(info.raw_files)} file(s) into {target_origin}/only_csv/"
+        csv_count = len(list((out_base / target_origin / "only_csv").glob("*.csv")))
+        return f"Generated {csv_count} series CSV(s) from {len(info.raw_files)} file(s) into {target_origin}/only_csv/"
 
     return "Unknown vendor."
 
@@ -241,11 +227,11 @@ def render_generate_tab(
         else:
             st.markdown("**No existing match found**")
             st.info("This will be treated as a new dataset. A new folder will be "
-                    f"created: `{info.latest_raw.stem}`")
+                    f"created: `{info.stable_key}`")
 
     st.divider()
 
-    target = info.existing_origin or info.latest_raw.stem
+    target = info.existing_origin or info.stable_key
     st.markdown(f"**Output folder:** `output_data/{vendor}/{target}/only_csv/`")
 
     if info.existing_origin:
