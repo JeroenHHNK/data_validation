@@ -104,5 +104,131 @@ def report(
     generate_report(dataset_root, output_file)
 
 
+@app.command()
+def migrate_wiertsema(
+    apply: Annotated[bool, typer.Option(help="Execute the migration (default is dry-run)")] = False,
+    output_dir: Annotated[Optional[Path], typer.Option(help="Override wiertsema output directory")] = None,
+):
+    """Migrate wiertsema output folders to stable-key naming."""
+    from .migrate_wiertsema import run_migration
+
+    repo_root = find_repo_root()
+    wiertsema_dir = output_dir or (repo_root / "output_data" / "wiertsema")
+    if not wiertsema_dir.is_absolute():
+        wiertsema_dir = repo_root / wiertsema_dir
+    validation_dir = repo_root / "validation_data" / "wiertsema"
+
+    report = run_migration(wiertsema_dir, apply=apply, validation_dir=validation_dir)
+    print(report)
+
+
+@app.command()
+def build_object_data(
+    dataset: Annotated[Optional[str], typer.Option(help="Limit to 'fugro' or 'wiertsema'. Omit for both.")] = None,
+    origin: Annotated[Optional[str], typer.Option(help="Process only this project folder. Omit for all.")] = None,
+):
+    """Derive OBJECT_DATA.csv per project folder from the only_csv filenames."""
+    from .object_data import write_object_data
+
+    repo_root = find_repo_root()
+    datasets = [dataset.lower()] if dataset else ["fugro", "wiertsema"]
+
+    for name in datasets:
+        root = resolve_dataset_root(name, repo_root)
+        if not root.is_dir():
+            continue
+        for project in sorted(p for p in root.iterdir() if p.is_dir()):
+            if origin and project.name != origin:
+                continue
+            if not (project / "only_csv").is_dir():
+                continue
+            df, out_path = write_object_data(project, name)
+            review = int(df["needs_review"].sum()) if not df.empty else 0
+            missing = int(df["bottom_filter"].isna().sum()) if not df.empty else 0
+            print(
+                f"{name}/{project.name}: {len(df)} series "
+                f"({missing} without bottom_filter, {review} need review) -> {out_path}"
+            )
+
+
+@app.command()
+def autoflag(
+    dataset: Annotated[Optional[str], typer.Option(help="Limit to 'fugro' or 'wiertsema'. Omit for both.")] = None,
+    origin: Annotated[Optional[str], typer.Option(help="Process only this project folder. Omit for all.")] = None,
+    apply: Annotated[bool, typer.Option(help="Write afgekeurd flags (default is a read-only dry run)")] = False,
+    respect_manual: Annotated[bool, typer.Option(help="Never flag a row already marked gecontroleerd")] = True,
+    stitch_boundary: Annotated[bool, typer.Option(help="Apply rule A across sensor stitch boundaries too")] = False,
+    apply_rule_a: Annotated[bool, typer.Option(help="Also write afgekeurd for rule A (default: report only)")] = False,
+    report: Annotated[Optional[Path], typer.Option(help="Write the per-series report to this CSV")] = None,
+    rule_a_report: Annotated[Optional[Path], typer.Option(help="Write rule A candidate rows to this CSV")] = None,
+):
+    """Auto-flag implausible readings as afgekeurd (rule A: drop; rule B: filter bottom).
+
+    Rule B is applied; rule A is report-only unless --apply-rule-a is given,
+    because against the human-validated project it disagreed with the reviewer
+    on most of its hits.
+    """
+    import pandas as pd
+
+    from .autoflag import flag_origin, summarize
+
+    repo_root = find_repo_root()
+    base_data_dir = repo_root / "output_data"
+    store_dir = repo_root / "validation_data"
+    datasets = [dataset.lower()] if dataset else ["fugro", "wiertsema"]
+
+    all_results = []
+    review_sink: list = []
+    for name in datasets:
+        root = resolve_dataset_root(name, repo_root)
+        if not root.is_dir():
+            continue
+        for project in sorted(p for p in root.iterdir() if p.is_dir()):
+            if origin and project.name != origin:
+                continue
+            if not (project / "only_csv").is_dir():
+                continue
+            results = flag_origin(
+                base_data_dir=base_data_dir,
+                store_dir=store_dir,
+                vendor=name,
+                origin=project.name,
+                dry_run=not apply,
+                respect_manual=respect_manual,
+                skip_stitch_boundary=not stitch_boundary,
+                apply_rule_a=apply_rule_a,
+                review_sink=review_sink,
+            )
+            all_results.extend(results)
+            df = summarize(results)
+            verb = "would flag" if not apply else "flagged"
+            print(
+                f"{name}/{project.name}: {verb} {int(df.newly_flagged.sum())} rows"
+                f"  (rule_b={int(df.rule_b.sum())}, "
+                f"rule_a reported={int(df.rule_a_reported.sum())})"
+            )
+
+    summary = summarize(all_results)
+    if not summary.empty:
+        mode = "DRY RUN - nothing written" if not apply else "APPLIED"
+        print(
+            f"\n{mode}. series={len(summary)} rows={int(summary.n_rows.sum())} "
+            f"rule_a={int(summary.rule_a.sum())} rule_b={int(summary.rule_b.sum())} "
+            f"newly_flagged={int(summary.newly_flagged.sum())} "
+            f"kept_manual={int(summary.protected_manual.sum())}"
+        )
+    if report:
+        report_path = report if report.is_absolute() else repo_root / report
+        summary.to_csv(report_path, index=False, encoding="utf-8-sig")
+        print(f"report -> {report_path}")
+
+    if review_sink and not apply_rule_a:
+        path = rule_a_report or (repo_root / "output_data" / "rule_a_review.csv")
+        if not path.is_absolute():
+            path = repo_root / path
+        pd.DataFrame(review_sink).to_csv(path, index=False, encoding="utf-8-sig")
+        print(f"rule A candidates (not flagged): {len(review_sink)} rows -> {path}")
+
+
 if __name__ == "__main__":
     app()

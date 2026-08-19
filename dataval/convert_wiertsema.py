@@ -81,10 +81,14 @@ def _detect_sensor_groups(title_row, header_row) -> list[dict]:
     return groups
 
 
-def process_workbook(xlsx_path: Path, dataset_root: Path) -> list[dict]:
+def process_workbook(
+    xlsx_path: Path,
+    dataset_root: Path,
+    origin_name: str | None = None,
+) -> list[dict]:
     print(f"Bestand: {xlsx_path.name}")
 
-    origin_stem = xlsx_path.stem
+    origin_stem = origin_name or xlsx_path.stem
     out_folder = dataset_root / origin_stem / "only_csv"
     out_folder.mkdir(parents=True, exist_ok=True)
 
@@ -192,6 +196,8 @@ def convert_wiertsema_batch(
     output_dir: Path,
     file_index: int | None = None,
 ) -> list[dict]:
+    from ._utils import parse_stable_key
+
     xlsx_files = sorted([p for p in input_dir.iterdir() if p.suffix.lower() == ".xlsx"])
     if not xlsx_files:
         print(f"No Excel files found in {input_dir}")
@@ -208,7 +214,8 @@ def convert_wiertsema_batch(
 
     all_summary_rows: list[dict] = []
     for xfile in xlsx_files:
-        rows = process_workbook(xfile, output_dir)
+        origin_name = parse_stable_key(xfile.name, "wiertsema")
+        rows = process_workbook(xfile, output_dir, origin_name=origin_name)
         all_summary_rows.extend(rows)
 
     if all_summary_rows:

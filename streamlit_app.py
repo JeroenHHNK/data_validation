@@ -16,8 +16,13 @@ import streamlit as st
 from dashboard import data_access, validation_store
 from dashboard.autoflags import load_flag_hints
 from dashboard.config import load_settings
-from dashboard.overview import collect_all_stats, compute_folder_summary
+from dashboard.overview import (
+    append_total_row,
+    collect_all_stats,
+    compute_folder_summary,
+)
 from dashboard.generate_tab import render_generate_tab
+from dashboard.stitch_tab import render_stitch_tab
 from dashboard.plotting import build_figure
 
 st.set_page_config(page_title="Groundwater Validation Dashboard", layout="wide")
@@ -315,19 +320,29 @@ def render_overview() -> None:
         return
 
     summary = compute_folder_summary(detail)
+    summary_with_total = append_total_row(summary)
 
     st.markdown("### Folder summary")
     st.dataframe(
-        summary[["vendor", "folder", "series_count", "amount_of_rows",
-                 "gecontroleerd_%", "afgekeurd_%"]],
+        summary_with_total[["vendor", "folder", "series_count", "amount_of_rows",
+                            "reviewed_rows", "gecontroleerd_%",
+                            "rejected_rows", "afgekeurd_%"]],
         hide_index=True,
         column_config={
             "vendor": "Vendor",
             "folder": "Folder",
             "series_count": st.column_config.NumberColumn("Series"),
-            "amount_of_rows": st.column_config.NumberColumn("Rows"),
+            "amount_of_rows": st.column_config.NumberColumn("Rows", format="%d"),
+            "reviewed_rows": st.column_config.NumberColumn(
+                "Gecontroleerd", format="%d",
+                help="Number of rows marked gecontroleerd",
+            ),
             "gecontroleerd_%": st.column_config.NumberColumn(
                 "Gecontroleerd %", format="%.1f%%",
+            ),
+            "rejected_rows": st.column_config.NumberColumn(
+                "Afgekeurd", format="%d",
+                help="Number of rows marked afgekeurd",
             ),
             "afgekeurd_%": st.column_config.NumberColumn(
                 "Afgekeurd %", format="%.1f%%",
@@ -372,7 +387,9 @@ def render_overview() -> None:
 
 render_sidebar()
 
-tab_overview, tab_validation, tab_generate = st.tabs(["Overview", "Validation", "Generate Data"])
+tab_overview, tab_validation, tab_generate, tab_stitch = st.tabs(
+    ["Overview", "Validation", "Generate Data", "Sensor Stitching"],
+)
 
 with tab_overview:
     render_overview()
@@ -385,4 +402,11 @@ with tab_generate:
         input_dir=SETTINGS.repo_root / "input_data",
         output_dir=SETTINGS.base_data_dir,
         validation_dir=SETTINGS.validation_store_dir,
+    )
+
+with tab_stitch:
+    render_stitch_tab(
+        base_data_dir=SETTINGS.base_data_dir,
+        validation_store_dir=SETTINGS.validation_store_dir,
+        round_freq=SETTINGS.round_freq,
     )

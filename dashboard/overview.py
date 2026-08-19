@@ -84,3 +84,34 @@ def compute_folder_summary(detail_df: pd.DataFrame) -> pd.DataFrame:
         grouped["rejected_rows"] / grouped["amount_of_rows"] * 100
     ).round(1).fillna(0.0)
     return grouped
+
+
+#: Label used for the combined all-vendor row in the folder summary.
+TOTAL_LABEL = "TOTAL"
+
+
+def append_total_row(summary_df: pd.DataFrame) -> pd.DataFrame:
+    """Append one row totalling every folder across all vendors.
+
+    Percentages are recomputed from the summed absolutes rather than averaged,
+    so the total reflects the real overall share.
+    """
+    if summary_df.empty:
+        return summary_df
+
+    body = summary_df[summary_df["vendor"] != TOTAL_LABEL]
+    rows = int(body["amount_of_rows"].sum())
+    reviewed = int(body["reviewed_rows"].sum())
+    rejected = int(body["rejected_rows"].sum())
+
+    total = {
+        "vendor": TOTAL_LABEL,
+        "folder": f"all vendors ({body['vendor'].nunique()})",
+        "amount_of_rows": rows,
+        "reviewed_rows": reviewed,
+        "rejected_rows": rejected,
+        "series_count": int(body["series_count"].sum()),
+        "gecontroleerd_%": round(reviewed / rows * 100, 1) if rows else 0.0,
+        "afgekeurd_%": round(rejected / rows * 100, 1) if rows else 0.0,
+    }
+    return pd.concat([body, pd.DataFrame([total])], ignore_index=True)
